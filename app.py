@@ -1,47 +1,63 @@
-
 import dash
-import dash_core_components as dcc
-import dash_html_components as html
+from dash import Dash, dcc, html, Input, Output
 import plotly.express as px
 import pandas as pd
-import dash_auth
 
-# Keep this out of source code repository - save in a file or a database
-VALID_USERNAME_PASSWORD_PAIRS = {
-    'Admin': 'DashApp@Test'
-}
+app = Dash(__name__)
 
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+try:
+    df_bitcoin = pd.read_csv("bitcoin_dataset.csv", 
+                            delimiter=',', 
+                            quotechar='"',  
+                            on_bad_lines='warn')
+    print("Bitcoin data loaded successfully")
+except Exception as e:
+    print(f"Error loading Bitcoin data: {e}")
+    df_bitcoin = pd.DataFrame()  
 
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+try:
+    df_tesla = pd.read_csv("tesla.csv", 
+                            delimiter=',', 
+                            quotechar='"',  
+                            on_bad_lines='warn')
+    print("Tesla data loaded successfully")
+except Exception as e:
+    print(f"Error loading Tesla data: {e}")
+    df_tesla = pd.DataFrame()  
 
-auth = dash_auth.BasicAuth(
-    app,
-    VALID_USERNAME_PASSWORD_PAIRS
-)
+df_bitcoin.columns = df_bitcoin.columns.str.lower()
+df_tesla.columns = df_tesla.columns.str.lower()
 
-# assume you have a "long-form" data frame
-# see https://plotly.com/python/px-arguments/ for more options
-df = pd.DataFrame({
-    "Fruit": ["Apples", "Oranges", "Bananas", "Apples", "Oranges", "Bananas"],
-    "Amount": [4, 1, 2, 2, 4, 5],
-    "City": ["SF", "SF", "SF", "Montreal", "Montreal", "Montreal"]
-})
+# Convert dates to datetime format
+df_bitcoin['date'] = pd.to_datetime(df_bitcoin['date'])
+df_tesla['date'] = pd.to_datetime(df_tesla['date'])
 
-fig = px.bar(df, x="Fruit", y="Amount", color="City", barmode="group")
+# Merge the datasets
+df_combined = pd.merge(df_bitcoin[['date', 'btc_market_price']],
+                       df_tesla[['date', 'close']],
+                       on='date')
 
-app.layout = html.Div(children=[
-    html.H1(children='Hello Dash'),
+print("Missing values in combined DataFrame:")
+print(df_combined.isna().sum())
 
-    html.Div(children='''
-        Dash: A web application framework for Python.
-    '''),
+# Reshape the DataFrame to "long" format
+df_long = pd.melt(df_combined, id_vars=['date'], value_vars=['btc_market_price', 'close'], 
+                  var_name='asset', value_name='price')
 
-    dcc.Graph(
-        id='example-graph',
-        figure=fig
-    )
+# Create the figure
+fig = px.line(df_long, x='date', y='price', color='asset', 
+              labels={
+                  'price': 'Price (USD)', 
+                  'asset': 'Asset'
+              },
+              title='Bitcoin vs Tesla Prices Over Time')
+
+# Define the layout of the app
+app.layout = html.Div([
+    html.H4('Bitcoin vs Tesla Prices Over Time'),
+    dcc.Graph(id='graph', figure=fig),  # Set the figure directly here
 ])
 
+# Run the Dash app
 if __name__ == '__main__':
-    app.run_server(debug=True,host='0.0.0.0', port=8050)
+    app.run_server(debug=True, host='0.0.0.0', port=8050)
